@@ -1,57 +1,42 @@
-// Web-App: Bau-KI Prototyp (React + Vite)
-// Funktionen: Bild-Upload, Vorschau, Platzhalter-KI-Ausgabe
-
 import React, { useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { auth } from "./firebase";
+import { signInWithEmailAndPassword } from "firebase/auth";
 
 export default function App() {
-  const [image, setImage] = useState(null);
-  const [preview, setPreview] = useState(null);
-  const [result, setResult] = useState("");
+  const [email, setEmail] = useState("");
+  const [passwort, setPasswort] = useState("");
+  const [fehler, setFehler] = useState("");
+  const [eingeloggt, setEingeloggt] = useState(false);
 
-  const handleUpload = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      setImage(file);
-      setPreview(URL.createObjectURL(file));
-      setResult("");
+  const handleLogin = async () => {
+    try {
+      await signInWithEmailAndPassword(auth, email, passwort);
+      setEingeloggt(true);
+    } catch (err) {
+      setFehler(err.message);
     }
   };
 
-  const handleAnalyze = () => {
-    if (!image) return;
-    // KI-Analyse-Simulation
-    setResult("✔️ Kein Fehler erkannt. Normgerechter Zustand laut Baustellenrichtlinien.");
-  };
+  if (!eingeloggt) {
+    return (
+      <div style={{ padding: 40, backgroundColor: "#e6ffe6", minHeight: "100vh" }}>
+        <h2>Login – BauVision25</h2>
+        <input
+          placeholder="E-Mail"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+        /><br />
+        <input
+          placeholder="Passwort"
+          type="password"
+          value={passwort}
+          onChange={(e) => setPasswort(e.target.value)}
+        /><br />
+        <button onClick={handleLogin}>Einloggen</button>
+        {fehler && <p style={{ color: "red" }}>{fehler}</p>}
+      </div>
+    );
+  }
 
-  return (
-    <div className="min-h-screen bg-gray-100 p-6 flex flex-col items-center">
-      <h1 className="text-3xl font-bold mb-4">Bau-KI Analyse</h1>
-
-      <Card className="w-full max-w-md mb-4">
-        <CardContent className="p-4">
-          <input type="file" accept="image/*" onChange={handleUpload} />
-          {preview && (
-            <img
-              src={preview}
-              alt="Vorschau"
-              className="mt-4 rounded-xl border shadow-md"
-            />
-          )}
-        </CardContent>
-      </Card>
-
-      <Button onClick={handleAnalyze} disabled={!image}>
-        Bild analysieren
-      </Button>
-
-      {result && (
-        <div className="mt-6 p-4 bg-white rounded-xl shadow-md w-full max-w-md">
-          <h2 className="text-xl font-semibold mb-2">Analyseergebnis:</h2>
-          <p>{result}</p>
-        </div>
-      )}
-    </div>
-  );
+  return <h1 style={{ padding: 40 }}>✅ Eingeloggt! Start der BauVision25</h1>;
 }
