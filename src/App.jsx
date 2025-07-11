@@ -1,144 +1,118 @@
 import React, { useState, useEffect } from "react";
 import { auth, db } from "./firebase";
-import {
-  signInWithEmailAndPassword,
-  onAuthStateChanged,
-  signOut,
-} from "firebase/auth";
-import {
-  collection,
-  addDoc,
-  onSnapshot,
-  query,
-  where,
-} from "firebase/firestore";
+import { onAuthStateChanged, signInWithEmailAndPassword } from "firebase/auth";
+import { collection, doc, setDoc, getDocs } from "firebase/firestore";
+import jsPDF from "jspdf";
+import html2canvas from "html2canvas";
 
 export default function App() {
   const [user, setUser] = useState(null);
   const [email, setEmail] = useState("");
   const [passwort, setPasswort] = useState("");
-  const [fehler, setFehler] = useState("");
+  const [projektname, setProjektname] = useState("");
   const [projekte, setProjekte] = useState([]);
-  const [projektName, setProjektName] = useState("");
-  const [projektDetails, setProjektDetails] = useState({
-    plz: "",
-    strasse: "",
-    hausnummer: "",
-    stadt: "",
-    bauherr: "",
-    ansprechpartner: "",
-  });
-  const [selectedProjekt, setSelectedProjekt] = useState(null);
+  const [aktuellesProjekt, setAktuellesProjekt] = useState(null);
   const [bilder, setBilder] = useState([]);
+  const [form, setForm] = useState({ plz: "", strasse: "", hausnummer: "", stadt: "", bauherr: "", ansprechpartner: "" });
 
   useEffect(() => {
-    onAuthStateChanged(auth, (user) => {
-      setUser(user);
-      if (user) {
-        const q = query(collection(db, "projekte"), where("uid", "==", user.uid));
-        const unsub = onSnapshot(q, (snapshot) => {
-          const data = snapshot.docs.map((doc) => ({
-            id: doc.id,
-            ...doc.data(),
-          }));
-          setProjekte(data);
-        });
-        return unsub;
+    const unsub = onAuthStateChanged(auth, (usr) => {
+      if (usr) {
+        setUser(usr);
+        ladeProjekte(usr.uid);
+      } else {
+        setUser(null);
       }
     });
+    return () => unsub();
   }, []);
 
-  const handleLogin = async () => {
-    try {
-      await signInWithEmailAndPassword(auth, email, passwort);
-      setFehler("");
-    } catch (err) {
-      setFehler("❌ " + err.message);
-    }
+  const ladeProjekte = async (uid) => {
+    const snapshot = await getDocs(collection(db, "nutzer", uid, "projekte"));
+    const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    setProjekte(data);
   };
 
-  const logout = () => signOut(auth);
+  const login = async () => {
+    await signInWithEmailAndPassword(auth, email, passwort);
+  };
 
-  const projektAnlegen = async () => {
-    const exists = projekte.some((p) => p.name === projektName);
-    if (!projektName || exists) return;
-    await addDoc(collection(db, "projekte"), {
-      uid: user.uid,
-      name: projektName,
-      ...projektDetails,
-    });
-    setProjektName("");
-    setProjektDetails({
-      plz: "",
-      strasse: "",
-      hausnummer: "",
-      stadt: "",
-      bauherr: "",
-      ansprechpartner: "",
-    });
+  const erstelleProjekt = async () => {
+    if (!projektname || projekte.find(p => p.name === projektname)) return;
+    const projekt = {
+      name: projektname,
+      ...form,
+      bilder: []
+    };
+    const ref = doc(db, "nutzer", user.uid, "projekte", projektname);
+    await setDoc(ref, projekt);
+    setProjektname("");
+    setForm({ plz: "", strasse: "", hausnummer: "", stadt: "", bauherr: "", ansprechpartner: "" });
+    ladeProjekte(user.uid);
   };
 
   const bilderHinzufuegen = (e) => {
     const files = Array.from(e.target.files);
-    setBilder([...bilder, ...files]);
+    const fileNames = files.map(f => f.name);
+    const aktualisiert = { ...aktuellesProjekt, bilder: [...(aktuellesProjekt.bilder || []), ...fileNames] };
+    setAktuellesProjekt(aktualisiert);
+    setDoc(doc(db, "nutzer", user.uid, "projekte", aktuellesProjekt.name), aktualisiert);
+  };
+
+  const pdfErstellen = () => {
+    const input = document.getElementById("pdf-content");
+    html2canvas(input).then((canvas) => {
+      const imgData = canvas.toDataURL("image/png");
+      const pdf = new jsPDF();
+      pdf.addImage(imgData, "PNG", 10, 10);
+      pdf.save(`${aktuellesProjekt.name}.pdf`);
+    });
   };
 
   if (!user) {
     return (
-      <div style={{ padding: 40 }}>
-        <h2>Login – BauVision25</h2>
-        <input
-          placeholder="E-Mail"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-        /><br />
-        <input
-          placeholder="Passwort"
-          type="password"
-          value={passwort}
-          onChange={(e) => setPasswort(e.target.value)}
-        /><br />
-        <button onClick={handleLogin}>Einloggen</button>
-        {fehler && <p style={{ color: "red" }}>{fehler}</p>}
+      <div style={{ padding: 20 }}>
+        <h2>Login</h2>
+        <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="E-Mail" />
+        <input value={passwort} onChange={(e) => setPasswort(e.target.value)} type="password" placeholder="Passwort" />
+        <button onClick={login}>Einloggen</button>
       </div>
     );
   }
 
-  if (selectedProjekt) {
+  if (!aktuellesProjekt) {
     return (
-      <div style={{ padding: 40 }}>
-        <h2>Projekt: {selectedProjekt.name}</h2>
-        <input type="file" multiple onChange={bilderHinzufuegen} />
+      <div style={{ padding: 20 }}>
+        <h2>Projektübersicht</h2>
+        <input value={projektname} onChange={(e) => setProjektname(e.target.value)} placeholder="Projektname" />
+        {["plz", "strasse", "hausnummer", "stadt", "bauherr", "ansprechpartner"].map((key) => (
+          <input key={key} value={form[key]} placeholder={key} onChange={(e) => setForm({ ...form, [key]: e.target.value })} />
+        ))}
+        <button onClick={erstelleProjekt}>Projekt anlegen</button>
         <ul>
-          {bilder.map((b, i) => <li key={i}>{b.name}</li>)}
+          {projekte.map((p) => (
+            <li key={p.name}>
+              <button onClick={() => setAktuellesProjekt(p)}>{p.name}</button>
+            </li>
+          ))}
         </ul>
-        <button onClick={() => setSelectedProjekt(null)}>Zurück</button>
       </div>
     );
   }
 
   return (
-    <div style={{ padding: 40 }}>
-      <h2>Hallo {user.email}</h2>
-      <button onClick={logout}>Abmelden</button>
-      <h3>Neues Projekt anlegen</h3>
-      <input placeholder="Projektname" value={projektName} onChange={(e) => setProjektName(e.target.value)} /><br />
-      <input placeholder="PLZ" value={projektDetails.plz} onChange={(e) => setProjektDetails({ ...projektDetails, plz: e.target.value })} /><br />
-      <input placeholder="Straße" value={projektDetails.strasse} onChange={(e) => setProjektDetails({ ...projektDetails, strasse: e.target.value })} /><br />
-      <input placeholder="Hausnummer" value={projektDetails.hausnummer} onChange={(e) => setProjektDetails({ ...projektDetails, hausnummer: e.target.value })} /><br />
-      <input placeholder="Stadt" value={projektDetails.stadt} onChange={(e) => setProjektDetails({ ...projektDetails, stadt: e.target.value })} /><br />
-      <input placeholder="Bauherr" value={projektDetails.bauherr} onChange={(e) => setProjektDetails({ ...projektDetails, bauherr: e.target.value })} /><br />
-      <input placeholder="Ansprechpartner" value={projektDetails.ansprechpartner} onChange={(e) => setProjektDetails({ ...projektDetails, ansprechpartner: e.target.value })} /><br />
-      <button onClick={projektAnlegen}>Projekt anlegen</button>
-
-      <h3>Projekte</h3>
-      <ul>
-        {projekte.map((p) => (
-          <li key={p.id}>
-            <button onClick={() => setSelectedProjekt(p)}>{p.name}</button>
-          </li>
-        ))}
-      </ul>
+    <div style={{ padding: 20 }}>
+      <div id="pdf-content">
+        <h2>{aktuellesProjekt.name}</h2>
+        <p>Adresse: {aktuellesProjekt.strasse} {aktuellesProjekt.hausnummer}, {aktuellesProjekt.plz} {aktuellesProjekt.stadt}</p>
+        <p>Bauherr: {aktuellesProjekt.bauherr} | Ansprechpartner: {aktuellesProjekt.ansprechpartner}</p>
+        <ul>
+          {(aktuellesProjekt.bilder || []).map((b, i) => <li key={i}>{b}</li>)}
+        </ul>
+      </div>
+      <input type="file" multiple onChange={bilderHinzufuegen} />
+      <button onClick={pdfErstellen}>PDF erstellen</button>
+      <button onClick={() => setAktuellesProjekt(null)}>Zurück</button>
     </div>
   );
 }
